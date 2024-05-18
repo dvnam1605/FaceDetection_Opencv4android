@@ -207,7 +207,8 @@ public class MainActivity extends AppCompatActivity {
         /*
         Hàm này đang gặp vấn đề
             faceData luôn rỗng ngay cả khi có khuôn mặt
-                Lý do: có thể do kích thước của frame đầu vào quá nhỏ
+                Lý do: Có thể do kích thước của frame đầu vào quá nhỏ
+                    ==> Cỏ thể viết lại hàm imageProxyToMat
          */
         int thickness = 2;
         float[] faceData = new float[faces.cols() * faces.channels()];
