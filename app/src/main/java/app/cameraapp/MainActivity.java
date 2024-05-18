@@ -184,11 +184,17 @@ public class MainActivity extends AppCompatActivity {
 
         // Chuyển đổi sang BGR trước khi detect khuôn mặt
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGR);
+        // Chuyển đổi đúng kich thước cho model
         Imgproc.resize(mat, mat, mInputSize);
 
+        // Phát hiện gương mặt
         faceDetector.detect(mat, faces);
+
+        // Vẽ khuôn mặt lên frame
+        // Hàm này đang gặp vấn đề
         visualize(mat, faces);
 
+        // Update preview
         runOnUiThread(() -> updatePreview(mat, previewView));
 
         mat.release();
@@ -196,7 +202,13 @@ public class MainActivity extends AppCompatActivity {
         imageProxy.close();
     }
 
-    private void visualize(Mat frame, Mat faces) {
+    // Vẽ khung xung quanh khuôn mặt
+    private void visualize(Mat frame, Mat faces){
+        /*
+        Hàm này đang gặp vấn đề
+            faceData luôn rỗng ngay cả khi có khuôn mặt
+                Lý do: có thể do kích thước của frame đầu vào quá nhỏ
+         */
         int thickness = 2;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
