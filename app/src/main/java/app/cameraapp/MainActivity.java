@@ -3,10 +3,10 @@ package app.cameraapp;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -28,15 +28,17 @@ import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import org.opencv.core.Core;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
-import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
+import org.opencv.dnn.Dnn;
+import org.opencv.dnn.Net;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.FaceDetectorYN;
 
@@ -49,13 +51,16 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "FaceDetection";
     ImageButton capture, toggleFlash, switchCamera;
     private PreviewView previewView;
+    private ImageView overlayImageView;
     private FaceDetectorYN faceDetector;
+    private Net faceRecognizer;
     int lensFacing = CameraSelector.LENS_FACING_BACK;
     Camera camera;
+
     float mScale = 1.0f;
     private Size mInputSize = null;
     private final ActivityResultLauncher<String> activityResultLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), o -> {
-        if(ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED){
+        if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera();
         }
     });
@@ -65,25 +70,35 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        loadOpenCV();
-        loadYunetModel();
-
         previewView = findViewById(R.id.previewView);
         capture = findViewById(R.id.recordButton);
         toggleFlash = findViewById(R.id.flashButton);
         switchCamera = findViewById(R.id.switchCameraButton);
+        overlayImageView = findViewById(R.id.overlayImageView);
 
+        boolean isOpenCVLoaded = loadOpenCV();
+        boolean isYuNetModelLoaded = loadYuNetModel();
+        boolean isMobileFaceNetModelLoaded = loadMobileFaceNetModel();
 
-        if(ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED){
+        if (isOpenCVLoaded && isYuNetModelLoaded && isMobileFaceNetModelLoaded) {
+            Toast.makeText(this, "All Models initialized successfully!", Toast.LENGTH_LONG).show();
+            Log.i(TAG, "Models initialized successfully!");
+        } else {
+            Toast.makeText(this, "Models initialization failed!", Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Models initialization failed!");
+        }
+
+        if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera();
-        }else{
+        } else {
             activityResultLauncher.launch(Manifest.permission.CAMERA);
         }
 
         switchCamera.setOnClickListener(v -> switchCamera());
         toggleFlash.setOnClickListener(v -> toggleFlash());
     }
-    public void startCamera(){
+
+    public void startCamera() {
         android.util.Size screenSize = new android.util.Size(2 * previewView.getWidth(), 2 * previewView.getHeight());
         ListenableFuture<ProcessCameraProvider> listenableFuture = ProcessCameraProvider.getInstance(this);
 
@@ -99,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
 
                 ImageCapture imageCapture = new ImageCapture.Builder().build();
 
-                // Chọn độ phân giải cho camera
+                // Camera resolution
                 ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
                         .setResolutionStrategy(new ResolutionStrategy(screenSize,
                                 ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
@@ -123,36 +138,60 @@ public class MainActivity extends AppCompatActivity {
 
         }, ContextCompat.getMainExecutor(this));
     }
+
     public void switchCamera() {
         lensFacing = (lensFacing == CameraSelector.LENS_FACING_BACK) ?
                 CameraSelector.LENS_FACING_FRONT : CameraSelector.LENS_FACING_BACK;
         startCamera();
     }
+
     public void toggleFlash() {
         if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
             boolean isFlashOn = (camera.getCameraInfo().getTorchState().getValue() == TorchState.ON);
             camera.getCameraControl().enableTorch(!isFlashOn);
         }
     }
-    private Mat imageProxyToMat(ImageProxy image) {
-        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-        byte[] bytes = new byte[buffer.remaining()];
-        buffer.get(bytes);
-        Mat mat = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC1);
-        mat.put(0, 0, bytes);
-        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_YUV2BGR_I420);
-        return mat;
+
+    private Mat yuvToRgb(ImageProxy image) {
+        ImageProxy.PlaneProxy[] planes = image.getPlanes();
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] nv21 = new byte[ySize + uSize + vSize];
+
+        // U and V are swapped
+        yBuffer.get(nv21, 0, ySize);
+        vBuffer.get(nv21, ySize, vSize);
+        uBuffer.get(nv21, ySize + vSize, uSize);
+
+        Mat yuvMat = new Mat(image.getHeight() + image.getHeight() / 2, image.getWidth(), CvType.CV_8UC1);
+        yuvMat.put(0, 0, nv21);
+
+        Mat rgbMat = new Mat();
+        Imgproc.cvtColor(yuvMat, rgbMat, Imgproc.COLOR_YUV2RGB_I420);
+        Core.rotate(rgbMat, rgbMat, Core.ROTATE_90_CLOCKWISE);
+        return rgbMat;
     }
 
-    private void loadOpenCV() {
+
+
+    private boolean loadOpenCV() {
         if (OpenCVLoader.initLocal()) {
             Log.i(TAG, "OpenCV loaded successfully");
+            return true;
         } else {
             Log.e(TAG, "OpenCV loaded failed!");
             Toast.makeText(this, "OpenCV was not found!", Toast.LENGTH_LONG).show();
+            return false;
         }
     }
-    private void loadYunetModel() {
+
+    private boolean loadYuNetModel() {
         byte[] buffer;
         try {
             InputStream is = this.getResources().openRawResource(R.raw.face_detection_yunet_2023mar);
@@ -162,82 +201,91 @@ public class MainActivity extends AppCompatActivity {
             is.close();
         } catch (IOException e) {
             e.printStackTrace();
-            Log.e(TAG, "Yunet model loaded failed" + e);
-            Toast.makeText(this, "Yunet model was not found", Toast.LENGTH_LONG).show();
-            return;
+            Log.e(TAG, "YuNet loaded failed" + e);
+            Toast.makeText(this, "YuNet model was not found", Toast.LENGTH_LONG).show();
+            return false;
         }
 
         MatOfByte mModelBuffer = new MatOfByte(buffer);
         MatOfByte mConfigBuffer = new MatOfByte();
         faceDetector = FaceDetectorYN.create("onnx", mModelBuffer, mConfigBuffer, new Size(320, 320));
-        Log.i(TAG, "FaceDetectorYN initialized successfully!");
+
+        Log.i(TAG, "YuNet initialized successfully!");
+        return true;
+    }
+
+    private boolean loadMobileFaceNetModel() {
+        byte[] PBuffer;
+        byte[] MBuffer;
+        try {
+            InputStream Pis = this.getResources().openRawResource(R.raw.mobilefacenet);
+            int size = Pis.available();
+            PBuffer = new byte[size];
+            int PBytesRead = Pis.read(PBuffer);
+            Pis.close();
+            InputStream Mis = this.getResources().openRawResource(R.raw.mobilefacenet_caffemodel);
+            size = Mis.available();
+            MBuffer = new byte[size];
+            int MBytesRead = Mis.read(MBuffer);
+            Mis.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.e(TAG, "MobileFaceNet loaded failed" + e);
+            Toast.makeText(this, "MobileFaceNet model was not found", Toast.LENGTH_LONG).show();
+            return false;
+        }
+        MatOfByte bufferProto = new MatOfByte();
+        MatOfByte bufferModel = new MatOfByte();
+        faceRecognizer = Dnn.readNetFromCaffe(bufferProto, bufferModel);
+        Log.i(TAG, "MobileFaceNet initialized successfully!");
+        return true;
     }
 
     private void processImage(ImageProxy imageProxy) {
-        Mat mat = imageProxyToMat(imageProxy);
-        Mat faces = new Mat();
+        Mat mat = yuvToRgb(imageProxy);
 
         if (mInputSize == null) {
-            mInputSize = new Size(Math.round(mat.cols()/mScale), Math.round(mat.rows()/mScale));
+            mInputSize = new Size(Math.round(mat.cols() / mScale), Math.round(mat.rows() / mScale));
             faceDetector.setInputSize(mInputSize);
         }
 
-        // Chuyển đổi sang BGR trước khi detect khuôn mặt
-        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGBA2BGR);
-        // Chuyển đổi đúng kich thước cho model
+        // Resize mat to the input size of the model
         Imgproc.resize(mat, mat, mInputSize);
 
-        // Phát hiện gương mặt
+        // Convert color to BGR
+        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR);
+
+        Mat faces = new Mat();
         faceDetector.detect(mat, faces);
 
-        // Vẽ khuôn mặt lên frame
-        // Hàm này đang gặp vấn đề
+        // Draw bounding boxes on the frame
         visualize(mat, faces);
 
-        // Update preview
-        runOnUiThread(() -> updatePreview(mat, previewView));
+        // Update the overlay ImageView with the processed frame
+        updateOverlay(mat);
 
         mat.release();
         faces.release();
         imageProxy.close();
     }
 
-    // Vẽ khung xung quanh khuôn mặt
-    private void visualize(Mat frame, Mat faces){
-        /*
-        Hàm này đang gặp vấn đề
-            faceData luôn rỗng ngay cả khi có khuôn mặt
-                Lý do: Có thể do kích thước của frame đầu vào quá nhỏ
-                    ==> Cỏ thể viết lại hàm imageProxyToMat
-         */
-        int thickness = 2;
+
+    // Draw bounding boxes
+    private void visualize(Mat frame, Mat faces) {
+        int thickness = 1;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
         for (int i = 0; i < faces.rows(); i++) {
             faces.get(i, 0, faceData);
-
-            Log.d(TAG, "Detected face (" + faceData[0] + ", " + faceData[1] + ", " +
-                    faceData[2] + ", " + faceData[3] + ")");
-
             Imgproc.rectangle(frame, new Rect(Math.round(mScale * faceData[0]), Math.round(mScale * faceData[1]),
                             Math.round(mScale * faceData[2]), Math.round(mScale * faceData[3])),
                     new Scalar(0, 255, 0), thickness);
-            Imgproc.circle(frame, new Point(Math.round(mScale * faceData[4]), Math.round(mScale * faceData[5])),
-                    2, new Scalar(255, 0, 0), thickness);
-            Imgproc.circle(frame, new Point(Math.round(mScale * faceData[6]), Math.round(mScale * faceData[7])),
-                    2, new Scalar(0, 0, 255), thickness);
-            Imgproc.circle(frame, new Point(Math.round(mScale * faceData[8]), Math.round(mScale * faceData[9])),
-                    2, new Scalar(0, 255, 255), thickness);
-            Imgproc.circle(frame, new Point(Math.round(mScale * faceData[10]), Math.round(mScale * faceData[11])),
-                    2, new Scalar(255, 255, 0), thickness);
-            Imgproc.circle(frame, new Point(Math.round(mScale * faceData[12]), Math.round(mScale * faceData[13])),
-                    2, new Scalar(255, 0, 255), thickness);
         }
     }
 
-    private void updatePreview(Mat frame, PreviewView previewView) {
+    private void updateOverlay(Mat frame) {
         Bitmap bitmap = Bitmap.createBitmap(frame.cols(), frame.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(frame, bitmap);
-        previewView.post(() -> previewView.setBackground(new BitmapDrawable(this.getResources(), bitmap)));
+        runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
     }
 }
