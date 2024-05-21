@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main"
@@ -12,50 +11,58 @@
         android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_centerInParent="true" />
+        android:layout_centerInParent="true" >
+
+    </androidx.camera.view.PreviewView>
+
+    <ImageButton
+        android:id="@+id/captureButton"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/capture_button"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:padding="10dp"
+        android:visibility="visible" />
 
     <ImageView
         android:id="@+id/overlayImageView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_centerInParent="true"
+        android:background="@android:color/transparent"
+        android:contentDescription="@null"
         android:scaleType="centerCrop"
-        android:visibility="visible"
-        android:background="@android:color/transparent" />
+        android:visibility="visible" />
 
     <ImageButton
-        android:layout_width="80sp"
-        android:layout_height="80sp"
-        android:layout_centerHorizontal="true"
-        android:layout_alignParentBottom="true"
-        android:layout_marginBottom="60sp"
-        android:id="@+id/recordButton"
-        android:importantForAccessibility="no"
-        android:src="@drawable/manual_record_24"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        app:tint="#ffffff"/>
-
-    <ImageButton
-        android:layout_width="60sp"
-        android:layout_height="60sp"
-        android:src="@drawable/flash_on_24"
-        android:layout_alignParentEnd="true"
-        android:layout_margin="20sp"
-        android:importantForAccessibility="no"
         android:id="@+id/flashButton"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        app:tint="#ffffff"/>
-    
-    <ImageButton
-        android:layout_width="60sp"
-        android:layout_height="60sp"
-        android:src="@drawable/switch_camera_android_24"
-        android:layout_below="@+id/flashButton"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
         android:layout_alignParentEnd="true"
-        android:layout_marginEnd="20sp"
-        android:importantForAccessibility="no"
-        android:id="@+id/switchCameraButton"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="20dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        app:tint="#ffffff"/>
+        android:contentDescription="@null"
+        android:rotationX="2"
+        android:src="@drawable/flash_on_24"
+        android:visibility="visible"
+        app:tint="#ffffff" />
+
+    <ImageButton
+        android:id="@+id/switchCameraButton"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_below="@id/flashButton"
+        android:layout_alignParentEnd="true"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="20dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@null"
+        android:src="@drawable/switch_camera_android_24"
+        android:visibility="visible"
+        app:tint="#ffffff" />
 
 </RelativeLayout>
