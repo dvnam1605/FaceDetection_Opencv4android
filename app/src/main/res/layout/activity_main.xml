@@ -9,9 +9,19 @@
     tools:context=".MainActivity">
 
     <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:id="@+id/previewView" />
+        android:layout_centerInParent="true" />
+
+    <ImageView
+        android:id="@+id/overlayImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_centerInParent="true"
+        android:scaleType="centerCrop"
+        android:visibility="visible"
+        android:background="@android:color/transparent" />
 
     <ImageButton
         android:layout_width="80sp"
@@ -47,6 +57,5 @@
         android:id="@+id/switchCameraButton"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         app:tint="#ffffff"/>
-
 
 </RelativeLayout>

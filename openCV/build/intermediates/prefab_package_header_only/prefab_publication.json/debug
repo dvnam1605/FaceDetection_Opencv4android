@@ -1,5 +1,5 @@
 {
-  "installationFolder": "D:\\Project\\CameraApp\\openCV\\build\\intermediates\\prefab_package\\debug\\prefab",
+  "installationFolder": "E:\\Study\\Code\\Java\\FaceDetection_Opencv4android\\openCV\\build\\intermediates\\prefab_package\\debug\\prefab",
   "gradlePath": ":openCV",
   "packageInfo": {
     "packageName": "openCV",
@@ -8,7 +8,7 @@
     "modules": [
       {
         "moduleName": "opencv_jni_shared",
-        "moduleHeaders": "D:\\Project\\CameraApp\\openCV\\native\\jni\\include",
+        "moduleHeaders": "E:\\Study\\Code\\Java\\FaceDetection_Opencv4android\\openCV\\native\\jni\\include",
         "moduleExportLibraries": [],
         "abis": []
       }
