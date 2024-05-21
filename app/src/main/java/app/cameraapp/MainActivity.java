@@ -46,6 +46,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "FaceDetection";
@@ -54,12 +56,13 @@ public class MainActivity extends AppCompatActivity {
     private PreviewView previewView;
     private ImageView overlayImageView;
     private FaceDetectorYN faceDetector;
-    private Net faceRecognizer;
+    Net faceRecognizer;
     int lensFacing = CameraSelector.LENS_FACING_BACK;
     Camera camera;
 
     float mScale = 1.0f;
     private Size mInputSize = null;
+    private final Executor backgroundExecutor = Executors.newSingleThreadExecutor();
     private final ActivityResultLauncher<String> activityResultLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), o -> {
         if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera();
@@ -127,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .build();
 
-                imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(previewView.getContext()), this::processImage);
+                imageAnalysis.setAnalyzer(backgroundExecutor, this::processImage);
 
                 cameraProvider.unbindAll();
 
@@ -147,7 +150,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void toggleFlash() {
-        if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
+        if (camera != null
+                && camera.getCameraInfo().hasFlashUnit()
+                && camera.getCameraInfo().getTorchState().getValue() != null)
+        {
             boolean isFlashOn = (camera.getCameraInfo().getTorchState().getValue() == TorchState.ON);
             camera.getCameraControl().enableTorch(!isFlashOn);
         }
@@ -246,7 +252,7 @@ public class MainActivity extends AppCompatActivity {
         Mat mat = yuvToRgb(imageProxy);
 
         if (mInputSize == null) {
-            mInputSize = new Size(Math.round(mat.cols() / mScale), Math.round(mat.rows() / mScale));
+            mInputSize = new Size(Math.round(5 * mat.cols() / mScale), Math.round(5 * mat.rows() / mScale));
             faceDetector.setInputSize(mInputSize);
         }
 
