@@ -50,6 +50,7 @@ import java.util.concurrent.ExecutionException;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "FaceDetection";
     ImageButton capture, toggleFlash, switchCamera;
+
     private PreviewView previewView;
     private ImageView overlayImageView;
     private FaceDetectorYN faceDetector;
@@ -71,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         previewView = findViewById(R.id.previewView);
-        capture = findViewById(R.id.recordButton);
+        capture = findViewById(R.id.captureButton);
         toggleFlash = findViewById(R.id.flashButton);
         switchCamera = findViewById(R.id.switchCameraButton);
         overlayImageView = findViewById(R.id.overlayImageView);
@@ -258,34 +259,37 @@ public class MainActivity extends AppCompatActivity {
         Mat faces = new Mat();
         faceDetector.detect(mat, faces);
 
-        // Draw bounding boxes on the frame
-        visualize(mat, faces);
+        // Create a transparent overlay
+        Mat overlay = Mat.zeros(mat.size(), CvType.CV_8UC4);
 
-        // Update the overlay ImageView with the processed frame
-        updateOverlay(mat);
+        // Draw bounding boxes on the transparent overlay
+        visualize(overlay, faces);
+
+        // Update the overlay ImageView with the processed overlay
+        updateOverlay(overlay);
 
         mat.release();
         faces.release();
+        overlay.release();
         imageProxy.close();
     }
 
-
-    // Draw bounding boxes
-    private void visualize(Mat frame, Mat faces) {
+    // Draw bounding boxes on the transparent overlay
+    private void visualize(Mat overlay, Mat faces) {
         int thickness = 1;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
         for (int i = 0; i < faces.rows(); i++) {
             faces.get(i, 0, faceData);
-            Imgproc.rectangle(frame, new Rect(Math.round(mScale * faceData[0]), Math.round(mScale * faceData[1]),
+            Imgproc.rectangle(overlay, new Rect(Math.round(mScale * faceData[0]), Math.round(mScale * faceData[1]),
                             Math.round(mScale * faceData[2]), Math.round(mScale * faceData[3])),
-                    new Scalar(0, 255, 0), thickness);
+                    new Scalar(0, 255, 0, 255), thickness); // Using RGBA for transparency
         }
     }
 
-    private void updateOverlay(Mat frame) {
-        Bitmap bitmap = Bitmap.createBitmap(frame.cols(), frame.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(frame, bitmap);
+    private void updateOverlay(Mat overlay) {
+        Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(overlay, bitmap);
         runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
     }
 }
