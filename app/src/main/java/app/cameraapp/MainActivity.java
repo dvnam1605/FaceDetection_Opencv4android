@@ -46,7 +46,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
 
     float mScale = 1.0f;
     private Size mInputSize = null;
-    private final Executor backgroundExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
     private final ActivityResultLauncher<String> activityResultLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), o -> {
         if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera();
@@ -267,7 +267,7 @@ public class MainActivity extends AppCompatActivity {
         Mat overlay = Mat.zeros(mat.size(), CvType.CV_8UC4);
 
         // Draw bounding boxes on the transparent overlay
-        visualize(overlay, faces);
+        runOnUiThread(visualize(overlay, faces));
 
         // Update the overlay ImageView with the processed overlay
         updateOverlay(overlay);
@@ -279,7 +279,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // Draw bounding boxes on the transparent overlay
-    private void visualize(Mat overlay, Mat faces) {
+    private Runnable visualize(Mat overlay, Mat faces) {
         int thickness = 1;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
@@ -289,6 +289,7 @@ public class MainActivity extends AppCompatActivity {
                             Math.round(mScale * faceData[2]), Math.round(mScale * faceData[3])),
                     new Scalar(0, 255, 0, 255), thickness); // Using RGBA for transparency
         }
+        return null;
     }
 
     private void updateOverlay(Mat overlay) {
