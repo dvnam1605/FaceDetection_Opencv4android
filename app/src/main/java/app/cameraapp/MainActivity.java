@@ -103,7 +103,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void startCamera() {
-        android.util.Size screenSize = new android.util.Size(2 * previewView.getWidth(), 2 * previewView.getHeight());
         ListenableFuture<ProcessCameraProvider> listenableFuture = ProcessCameraProvider.getInstance(this);
 
         listenableFuture.addListener(() -> {
@@ -120,8 +119,7 @@ public class MainActivity extends AppCompatActivity {
 
                 // Camera resolution
                 ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
-                        .setResolutionStrategy(new ResolutionStrategy(screenSize,
-                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+                        .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
                         .build();
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
@@ -252,7 +250,7 @@ public class MainActivity extends AppCompatActivity {
         Mat mat = yuvToRgb(imageProxy);
 
         if (mInputSize == null) {
-            mInputSize = new Size(Math.round(5 * mat.cols() / mScale), Math.round(5 * mat.rows() / mScale));
+            mInputSize = new Size(Math.round(mat.cols() / mScale), Math.round(mat.rows() / mScale));
             faceDetector.setInputSize(mInputSize);
         }
 
