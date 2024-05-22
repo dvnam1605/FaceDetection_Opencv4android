@@ -197,53 +197,47 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean loadYuNetModel() {
-        byte[] buffer;
-        try {
-            InputStream is = this.getResources().openRawResource(R.raw.face_detection_yunet_2023mar);
+        try (InputStream is = this.getResources().openRawResource(R.raw.face_detection_yunet_2023mar)) {
             int size = is.available();
-            buffer = new byte[size];
-            int bytesRead = is.read(buffer);
-            is.close();
+            byte[] buffer = new byte[size];
+            //noinspection ResultOfMethodCallIgnored
+            is.read(buffer);
+            MatOfByte mModelBuffer = new MatOfByte(buffer);
+            MatOfByte mConfigBuffer = new MatOfByte();
+            faceDetector = FaceDetectorYN.create("onnx", mModelBuffer, mConfigBuffer, new Size(320, 320));
+
+            Log.i(TAG, "YuNet initialized successfully!");
+            return true;
         } catch (IOException e) {
-            e.printStackTrace();
             Log.e(TAG, "YuNet loaded failed" + e);
             Toast.makeText(this, "YuNet model was not found", Toast.LENGTH_LONG).show();
             return false;
         }
-
-        MatOfByte mModelBuffer = new MatOfByte(buffer);
-        MatOfByte mConfigBuffer = new MatOfByte();
-        faceDetector = FaceDetectorYN.create("onnx", mModelBuffer, mConfigBuffer, new Size(320, 320));
-
-        Log.i(TAG, "YuNet initialized successfully!");
-        return true;
     }
 
     private boolean loadMobileFaceNetModel() {
-        byte[] PBuffer;
-        byte[] MBuffer;
-        try {
-            InputStream Pis = this.getResources().openRawResource(R.raw.mobilefacenet);
-            int size = Pis.available();
-            PBuffer = new byte[size];
-            int PBytesRead = Pis.read(PBuffer);
-            Pis.close();
-            InputStream Mis = this.getResources().openRawResource(R.raw.mobilefacenet_caffemodel);
-            size = Mis.available();
-            MBuffer = new byte[size];
-            int MBytesRead = Mis.read(MBuffer);
-            Mis.close();
+        try (InputStream protoIs = this.getResources().openRawResource(R.raw.mobilefacenet);
+             InputStream modelIs = this.getResources().openRawResource(R.raw.mobilefacenet_caffemodel)) {
+            int protoSize = protoIs.available();
+            byte[] protoBuffer = new byte[protoSize];
+            //noinspection ResultOfMethodCallIgnored
+            protoIs.read(protoBuffer);
+
+            int modelSize = modelIs.available();
+            byte[] modelBuffer = new byte[modelSize];
+            //noinspection ResultOfMethodCallIgnored
+            modelIs.read(modelBuffer);
+
+            MatOfByte bufferProto = new MatOfByte(protoBuffer);
+            MatOfByte bufferModel = new MatOfByte(modelBuffer);
+            faceRecognizer = Dnn.readNetFromCaffe(bufferProto, bufferModel);
+            Log.i(TAG, "MobileFaceNet initialized successfully!");
+            return true;
         } catch (IOException e) {
-            e.printStackTrace();
             Log.e(TAG, "MobileFaceNet loaded failed" + e);
             Toast.makeText(this, "MobileFaceNet model was not found", Toast.LENGTH_LONG).show();
             return false;
         }
-        MatOfByte bufferProto = new MatOfByte();
-        MatOfByte bufferModel = new MatOfByte();
-        faceRecognizer = Dnn.readNetFromCaffe(bufferProto, bufferModel);
-        Log.i(TAG, "MobileFaceNet initialized successfully!");
-        return true;
     }
 
     private void processImage(ImageProxy imageProxy) {
@@ -296,5 +290,6 @@ public class MainActivity extends AppCompatActivity {
         Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(overlay, bitmap);
         runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
+        overlay.release();
     }
 }
