@@ -59,8 +59,6 @@ public class MainActivity extends AppCompatActivity {
     Net faceRecognizer;
     int lensFacing = CameraSelector.LENS_FACING_BACK;
     Camera camera;
-
-    float mScale = 1.0f;
     private Size mInputSize = null;
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
     private final ActivityResultLauncher<String> activityResultLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), o -> {
@@ -102,6 +100,18 @@ public class MainActivity extends AppCompatActivity {
         toggleFlash.setOnClickListener(v -> toggleFlash());
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        backgroundExecutor.shutdown();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        backgroundExecutor.shutdown();
+    }
+
     public void startCamera() {
         ListenableFuture<ProcessCameraProvider> listenableFuture = ProcessCameraProvider.getInstance(this);
 
@@ -125,7 +135,6 @@ public class MainActivity extends AppCompatActivity {
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setResolutionSelector(resolutionSelector)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .build();
 
                 imageAnalysis.setAnalyzer(backgroundExecutor, this::processImage);
@@ -244,7 +253,7 @@ public class MainActivity extends AppCompatActivity {
         Mat mat = yuvToRgb(imageProxy);
 
         if (mInputSize == null) {
-            mInputSize = new Size(Math.round(mat.cols() / mScale), Math.round(mat.rows() / mScale));
+            mInputSize = new Size(mat.cols(),mat.rows());
             faceDetector.setInputSize(mInputSize);
         }
 
@@ -255,6 +264,7 @@ public class MainActivity extends AppCompatActivity {
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR);
 
         Mat faces = new Mat();
+        faceDetector.setScoreThreshold(0.8f);
         faceDetector.detect(mat, faces);
 
         // Create a transparent overlay
@@ -279,8 +289,8 @@ public class MainActivity extends AppCompatActivity {
 
         for (int i = 0; i < faces.rows(); i++) {
             faces.get(i, 0, faceData);
-            Imgproc.rectangle(overlay, new Rect(Math.round(mScale * faceData[0]), Math.round(mScale * faceData[1]),
-                            Math.round(mScale * faceData[2]), Math.round(mScale * faceData[3])),
+            Imgproc.rectangle(overlay, new Rect(Math.round(faceData[0]), Math.round(faceData[1]),
+                            Math.round(faceData[2]), Math.round(faceData[3])),
                     new Scalar(0, 255, 0, 255), thickness); // Using RGBA for transparency
         }
         return null;
