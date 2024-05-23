@@ -133,12 +133,13 @@ public class MainActivity extends AppCompatActivity {
         // Storage permissions based on Android version
         StorageAccess storageAccess = getStorageAccess(this);
         if (storageAccess == StorageAccess.DENIED) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED);
-            } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.TIRAMISU) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES);
-            } else {
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
                 permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            } else {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    permissionsToRequest.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED);
+                }
             }
         }
 
@@ -157,13 +158,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public static StorageAccess getStorageAccess(Context context) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED) {
             // Full access on Android 13+
             return StorageAccess.FULL;
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                 ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED) {
-            // Partial access on Android 13+
+            // Partial access on Android 14+
             return StorageAccess.PARTIAL;
         } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
             // Full access up to Android 12
@@ -173,6 +174,7 @@ public class MainActivity extends AppCompatActivity {
             return StorageAccess.DENIED;
         }
     }
+
 
     @Override
     protected void onDestroy() {
@@ -228,12 +230,14 @@ public class MainActivity extends AppCompatActivity {
         if (camera != null) {
             // Create a bitmap of the PreviewView
             Bitmap previewBitmap = previewView.getBitmap();
+            // create a bitmap
+            Bitmap combinedBitmap;
             if (previewBitmap != null) {
-                // Create a bitmap of the overlay ImageView
-                Bitmap overlayBitmap = ((BitmapDrawable) overlayImageView.getDrawable()).getBitmap();
-
-                // Combine the two bitmaps
-                Bitmap combinedBitmap = combineBitmaps(previewBitmap, overlayBitmap);
+                if (overlayImageView.getDrawable() != null) {
+                    Bitmap overlayBitmap = ((BitmapDrawable) overlayImageView.getDrawable()).getBitmap();
+                    combinedBitmap = combineBitmaps(previewBitmap, overlayBitmap);
+                }
+                else combinedBitmap = previewBitmap;
 
                 // Convert the combined bitmap to a byte array
                 ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -262,7 +266,7 @@ public class MainActivity extends AppCompatActivity {
                     os.write(byteArray);
                     os.close();
                     // Display a success message
-                    String msg = "Photo capture succeeded: " + imageUri;
+                    String msg = "Photo capture succeeded!";
                     Toast.makeText(getBaseContext(), msg, Toast.LENGTH_SHORT).show();
                     Log.d(TAG, msg);
                 } catch (IOException e) {
@@ -345,7 +349,7 @@ public class MainActivity extends AppCompatActivity {
             MatOfByte mModelBuffer = new MatOfByte(buffer);
             MatOfByte mConfigBuffer = new MatOfByte();
             faceDetector = FaceDetectorYN.create("onnx", mModelBuffer, mConfigBuffer, new Size(320, 320));
-
+            faceDetector.setScoreThreshold(0.8f);
             Log.i(TAG, "YuNet initialized successfully!");
             return true;
         } catch (IOException e) {
@@ -395,17 +399,18 @@ public class MainActivity extends AppCompatActivity {
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR);
 
         Mat faces = new Mat();
-        faceDetector.setScoreThreshold(0.8f);
         faceDetector.detect(mat, faces);
 
         // Create a transparent overlay
         Mat overlay = Mat.zeros(mat.size(), CvType.CV_8UC4);
 
         // Draw bounding boxes on the transparent overlay
-        runOnUiThread(visualize(overlay, faces));
+        runOnUiThread(() -> visualize(overlay, faces));
 
         // Update the overlay ImageView with the processed overlay
-        updateOverlay(overlay);
+        Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(overlay, bitmap);
+        runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
 
         mat.release();
         faces.release();
@@ -414,8 +419,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // Draw bounding boxes on the transparent overlay
-    private Runnable visualize(Mat overlay, Mat faces) {
-        int thickness = 1;
+    private void visualize(Mat overlay, Mat faces) {
+        int thickness = 2;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
         for (int i = 0; i < faces.rows(); i++) {
@@ -424,12 +429,5 @@ public class MainActivity extends AppCompatActivity {
                             Math.round(faceData[2]), Math.round(faceData[3])),
                     new Scalar(0, 255, 0, 255), thickness); // Using RGBA for transparency
         }
-        return null;
-    }
-
-    private void updateOverlay(Mat overlay) {
-        Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(overlay, bitmap);
-        runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
     }
 }
