@@ -1,9 +1,17 @@
 package app.cameraapp;
 
 import android.Manifest;
+import android.content.ContentValues;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.drawable.BitmapDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -42,9 +50,14 @@ import org.opencv.dnn.Net;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.FaceDetectorYN;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,7 +65,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "FaceDetection";
     ImageButton capture, toggleFlash, switchCamera;
-
+    private ImageCapture imageCapture;
     private PreviewView previewView;
     private ImageView overlayImageView;
     private FaceDetectorYN faceDetector;
@@ -61,11 +74,23 @@ public class MainActivity extends AppCompatActivity {
     Camera camera;
     private Size mInputSize = null;
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
-    private final ActivityResultLauncher<String> activityResultLauncher = registerForActivityResult(new ActivityResultContracts.RequestPermission(), o -> {
-        if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startCamera();
+    private final ActivityResultLauncher<String[]> requestPermissionLauncher = registerForActivityResult(
+        new ActivityResultContracts.RequestMultiplePermissions(),
+        result -> {
+            boolean allPermissionsGranted = true;
+            for (Map.Entry<String, Boolean> entry : result.entrySet()) {
+                if (!entry.getValue()) {
+                    allPermissionsGranted = false;
+                    break;
+                }
+            }
+            if (allPermissionsGranted) {
+                startCamera();
+            } else {
+                Toast.makeText(MainActivity.this, "Permissions denied", Toast.LENGTH_SHORT).show();
+            }
         }
-    });
+    );
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,14 +115,63 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "Models initialization failed!");
         }
 
-        if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startCamera();
-        } else {
-            activityResultLauncher.launch(Manifest.permission.CAMERA);
-        }
+        requestPermissions();
 
+        capture.setOnClickListener(v -> captureImage());
         switchCamera.setOnClickListener(v -> switchCamera());
         toggleFlash.setOnClickListener(v -> toggleFlash());
+    }
+
+    private void requestPermissions() {
+        List<String> permissionsToRequest = new ArrayList<>();
+
+        // Camera permission
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.CAMERA);
+        }
+
+        // Storage permissions based on Android version
+        StorageAccess storageAccess = getStorageAccess(this);
+        if (storageAccess == StorageAccess.DENIED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED);
+            } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.TIRAMISU) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES);
+            } else {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            }
+        }
+
+        if (!permissionsToRequest.isEmpty()) {
+            String[] permissionsArray = permissionsToRequest.toArray(new String[0]);
+            requestPermissionLauncher.launch(permissionsArray);
+        } else {
+            startCamera();
+        }
+    }
+
+    public enum StorageAccess {
+        FULL,
+        PARTIAL,
+        DENIED
+    }
+
+    public static StorageAccess getStorageAccess(Context context) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED) {
+            // Full access on Android 13+
+            return StorageAccess.FULL;
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED) {
+            // Partial access on Android 13+
+            return StorageAccess.PARTIAL;
+        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            // Full access up to Android 12
+            return StorageAccess.FULL;
+        } else {
+            // Access denied
+            return StorageAccess.DENIED;
+        }
     }
 
     @Override
@@ -125,7 +199,7 @@ public class MainActivity extends AppCompatActivity {
                         .requireLensFacing(lensFacing)
                         .build();
 
-                ImageCapture imageCapture = new ImageCapture.Builder().build();
+                imageCapture = new ImageCapture.Builder().build();
 
                 // Camera resolution
                 ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
@@ -148,6 +222,65 @@ public class MainActivity extends AppCompatActivity {
             }
 
         }, ContextCompat.getMainExecutor(this));
+    }
+
+    public void captureImage() {
+        if (camera != null) {
+            // Create a bitmap of the PreviewView
+            Bitmap previewBitmap = previewView.getBitmap();
+            if (previewBitmap != null) {
+                // Create a bitmap of the overlay ImageView
+                Bitmap overlayBitmap = ((BitmapDrawable) overlayImageView.getDrawable()).getBitmap();
+
+                // Combine the two bitmaps
+                Bitmap combinedBitmap = combineBitmaps(previewBitmap, overlayBitmap);
+
+                // Convert the combined bitmap to a byte array
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                combinedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+                byte[] byteArray = stream.toByteArray();
+
+                // Create ContentValues for the new image
+                ContentValues contentValues = new ContentValues();
+                contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, "Image_" + System.currentTimeMillis());
+                contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg");
+
+                // Get the content URI for the new image
+                Uri imageUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
+
+                if (imageUri == null) {
+                    Log.e(TAG, "Photo capture failed: imageUri is null");
+                    return;
+                }
+                // Write the byte array to the content URI
+                try {
+                    OutputStream os = getContentResolver().openOutputStream(imageUri);
+                    if (os == null) {
+                        Log.e(TAG, "Photo capture failed: OutputStream is null");
+                        return;
+                    }
+                    os.write(byteArray);
+                    os.close();
+                    // Display a success message
+                    String msg = "Photo capture succeeded: " + imageUri;
+                    Toast.makeText(getBaseContext(), msg, Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, msg);
+                } catch (IOException e) {
+                    Log.e(TAG, "Photo capture failed: ", e);
+                }
+            }
+            else {
+                Log.e(TAG, "Preview bitmap is null");
+            }
+        }
+    }
+
+    private Bitmap combineBitmaps(Bitmap background, Bitmap overlay) {
+        Bitmap combinedBitmap = Bitmap.createBitmap(background.getWidth(), background.getHeight(), background.getConfig());
+        Canvas canvas = new Canvas(combinedBitmap);
+        canvas.drawBitmap(background, new Matrix(), null);
+        canvas.drawBitmap(overlay, new Matrix(), null);
+        return combinedBitmap;
     }
 
     public void switchCamera() {
@@ -176,23 +309,21 @@ public class MainActivity extends AppCompatActivity {
         int uSize = uBuffer.remaining();
         int vSize = vBuffer.remaining();
 
-        byte[] nv21 = new byte[ySize + uSize + vSize];
+        byte[] i420 = new byte[ySize + uSize + vSize];
 
         // U and V are swapped
-        yBuffer.get(nv21, 0, ySize);
-        vBuffer.get(nv21, ySize, vSize);
-        uBuffer.get(nv21, ySize + vSize, uSize);
+        yBuffer.get(i420, 0, ySize);
+        vBuffer.get(i420, ySize, vSize);
+        uBuffer.get(i420, ySize + vSize, uSize);
 
         Mat yuvMat = new Mat(image.getHeight() + image.getHeight() / 2, image.getWidth(), CvType.CV_8UC1);
-        yuvMat.put(0, 0, nv21);
+        yuvMat.put(0, 0, i420);
 
         Mat rgbMat = new Mat();
         Imgproc.cvtColor(yuvMat, rgbMat, Imgproc.COLOR_YUV2RGB_I420);
         Core.rotate(rgbMat, rgbMat, Core.ROTATE_90_CLOCKWISE);
         return rgbMat;
     }
-
-
 
     private boolean loadOpenCV() {
         if (OpenCVLoader.initLocal()) {
@@ -300,6 +431,5 @@ public class MainActivity extends AppCompatActivity {
         Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(overlay, bitmap);
         runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
-        overlay.release();
     }
 }
