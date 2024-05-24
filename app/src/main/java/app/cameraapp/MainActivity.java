@@ -65,7 +65,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "FaceDetection";
     ImageButton capture, toggleFlash, switchCamera;
-    private ImageCapture imageCapture;
+
     private PreviewView previewView;
     private ImageView overlayImageView;
     private FaceDetectorYN faceDetector;
@@ -201,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
                         .requireLensFacing(lensFacing)
                         .build();
 
-                imageCapture = new ImageCapture.Builder().build();
+                ImageCapture imageCapture = new ImageCapture.Builder().build();
 
                 // Camera resolution
                 ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
@@ -213,10 +213,7 @@ public class MainActivity extends AppCompatActivity {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                imageAnalysis.setAnalyzer(backgroundExecutor, imageProxy -> {
-                    processImage(imageProxy);
-                    imageProxy.close();
-                });
+                imageAnalysis.setAnalyzer(backgroundExecutor, this::processImage);
 
                 cameraProvider.unbindAll();
 
@@ -402,27 +399,27 @@ public class MainActivity extends AppCompatActivity {
         Imgproc.cvtColor(mat, mat, Imgproc.COLOR_RGB2BGR);
 
         Mat faces = new Mat();
+        faceDetector.setScoreThreshold(0.8f);
         faceDetector.detect(mat, faces);
 
         // Create a transparent overlay
         Mat overlay = Mat.zeros(mat.size(), CvType.CV_8UC4);
 
         // Draw bounding boxes on the transparent overlay
-        runOnUiThread(() -> visualize(overlay, faces));
+        runOnUiThread(visualize(overlay, faces));
 
         // Update the overlay ImageView with the processed overlay
-        Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(overlay, bitmap);
-        runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
+        updateOverlay(overlay);
 
         mat.release();
         faces.release();
         overlay.release();
+        imageProxy.close();
     }
 
     // Draw bounding boxes on the transparent overlay
-    private void visualize(Mat overlay, Mat faces) {
-        int thickness = 2;
+    private Runnable visualize(Mat overlay, Mat faces) {
+        int thickness = 1;
         float[] faceData = new float[faces.cols() * faces.channels()];
 
         for (int i = 0; i < faces.rows(); i++) {
@@ -431,5 +428,13 @@ public class MainActivity extends AppCompatActivity {
                             Math.round(faceData[2]), Math.round(faceData[3])),
                     new Scalar(0, 255, 0, 255), thickness); // Using RGBA for transparency
         }
+        return null;
+    }
+
+    private void updateOverlay(Mat overlay) {
+        Bitmap bitmap = Bitmap.createBitmap(overlay.cols(), overlay.rows(), Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(overlay, bitmap);
+        runOnUiThread(() -> overlayImageView.setImageBitmap(bitmap));
+        overlay.release();
     }
 }
